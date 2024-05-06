@@ -86,7 +86,7 @@ CREATE(:Package {id: $id, namespace: $namespace, name: $name, purls: $purls, cpe
             for r in &package.external_reference {
                 match &*r.reference_type {
                     "purl" => purls.push(r.reference_locator.clone()),
-                    "cpe" => cpes.push(r.reference_locator.clone()),
+                    "cpe22Type" => cpes.push(r.reference_locator.clone()),
                     _ => {}
                 }
             }
