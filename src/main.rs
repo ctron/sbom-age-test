@@ -2,6 +2,7 @@ mod db;
 mod rel;
 
 use crate::db::Database;
+use clap::Parser;
 use serde_json::Value;
 use spdx_rs::models::SPDX;
 use std::fs::File;
@@ -26,41 +27,71 @@ fn init_log() {
         .expect("error initializing logging");
 }
 
-#[tokio::main]
-async fn main() {
-    init_log();
-    run().await.unwrap();
+#[derive(Clone, Debug, clap::Parser)]
+pub struct Cli {
+    #[arg(env = "ROOT_DIR", default_value = "data")]
+    root: PathBuf,
+    #[arg(short, long, env = "PREFIXES", value_delimiter = ',')]
+    prefix: Vec<String>,
 }
 
-async fn run() -> anyhow::Result<()> {
-    let mut db = Database::new("host=localhost port=5433 user=postgres password=postgres").await?;
-    // db.execute(r#"LOAD 'age'"#, &[]).await?;
-    // db.execute(r#"SET search_path = ag_catalog, "$user", public"#, &[]).await?;
+#[tokio::main]
+async fn main() {
+    let cli = Cli::parse();
+    init_log();
+    cli.run().await.unwrap();
+}
 
-    for entry in walkdir::WalkDir::new("data") {
-        let entry = entry?;
-        let name = entry.file_name().to_string_lossy().to_string();
-        if !name.ends_with(".bz2") {
-            continue;
+impl Cli {
+    pub async fn run(self) -> anyhow::Result<()> {
+        let mut db =
+            Database::new("host=localhost port=5433 user=postgres password=postgres").await?;
+        // db.execute(r#"LOAD 'age'"#, &[]).await?;
+        // db.execute(r#"SET search_path = ag_catalog, "$user", public"#, &[]).await?;
+
+        for entry in walkdir::WalkDir::new(&self.root) {
+            let entry = entry?;
+            let name = entry.file_name().to_string_lossy().to_string();
+            if !name.ends_with(".bz2") {
+                continue;
+            }
+
+            // test filter
+
+            if !self.accepted(entry.path()) {
+                continue;
+            }
+
+            // process
+
+            process(&mut db, entry.path()).await?;
         }
 
-        process(&mut db, entry.path()).await?;
+        Ok(())
     }
 
-    Ok(())
+    fn accepted(&self, path: &Path) -> bool {
+        if self.prefix.is_empty() {
+            return true;
+        }
+
+        let file = path
+            .file_name()
+            .unwrap_or_else(|| path.as_os_str())
+            .to_string_lossy();
+
+        for prefix in &self.prefix {
+            if file.starts_with(prefix) {
+                return true;
+            }
+        }
+
+        false
+    }
 }
 
 async fn process(db: &mut Database, file: &Path) -> anyhow::Result<()> {
-    if !file
-        .file_name()
-        .unwrap_or_else(|| file.as_os_str())
-        .to_string_lossy()
-        .starts_with("directory_")
-    {
-        return Ok(());
-    }
-
-    log::info!("Processing: {}", file.display());
+    log::info!("Parsing: {}", file.display());
 
     let file = file.to_path_buf();
     let sbom = spawn_blocking(move || {
@@ -84,7 +115,11 @@ async fn process(db: &mut Database, file: &Path) -> anyhow::Result<()> {
     })
     .await??;
 
-    log::info!("SBOM: {}", sbom.document_creation_information.document_name);
+    log::info!(
+        "Ingesting SBOM: {} / {}",
+        sbom.document_creation_information.document_name,
+        sbom.document_creation_information.spdx_document_namespace
+    );
 
     db.ingest(sbom).await?;
 
@@ -98,7 +133,7 @@ pub fn fix_license(json: &mut Value) -> bool {
         for package in packages {
             if let Some(declared) = package["licenseDeclared"].as_str() {
                 if let Err(err) = spdx_expression::SpdxExpression::parse(declared) {
-                    log::warn!("Replacing faulty SPDX license expression with NOASSERTION: {err}");
+                    log::debug!("Replacing faulty SPDX license expression with NOASSERTION: {err}");
                     package["licenseDeclared"] = "NOASSERTION".into();
                     changed = true;
                 }
@@ -107,4 +142,15 @@ pub fn fix_license(json: &mut Value) -> bool {
     }
 
     changed
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use clap::CommandFactory;
+
+    #[test]
+    fn test_args() {
+        Cli::command().debug_assert()
+    }
 }
