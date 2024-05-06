@@ -6,5 +6,11 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: postgres
     image: "docker.io/apache/age:PG16_latest"
+    command:
+      - postgres
+      - -c
+      - shared_buffers=1GB
+    volumes:
+      - ./db-data:/var/lib/postgresql/data:z
     ports:
       - "5433:5432"

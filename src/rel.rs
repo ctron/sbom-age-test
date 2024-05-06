@@ -5,6 +5,7 @@ pub enum Relationship {
     Describes,
     Contains,
     DependsOn,
+    DevDependsOn,
     Generates,
     PackageOf,
     VariantOf,
@@ -15,16 +16,17 @@ pub enum Relationship {
 impl Relationship {
     pub fn from_rel(a: String, r#type: &RelationshipType, b: String) -> (String, Self, String) {
         match r#type {
-            RelationshipType::Describes => (a, Self::Describes, b),
-            RelationshipType::DescribedBy => (b, Self::Describes, a),
-            RelationshipType::Contains => (a, Self::Contains, b),
-            RelationshipType::ContainedBy => (b, Self::Contains, a),
-            RelationshipType::DependsOn => (a, Self::DependsOn, b),
-            RelationshipType::DependencyOf => (b, Self::DependsOn, a),
+            RelationshipType::Describes => (b, Self::Describes, a),
+            RelationshipType::DescribedBy => (a, Self::Describes, b),
+            RelationshipType::Contains => (b, Self::Contains, a),
+            RelationshipType::ContainedBy => (a, Self::Contains, b),
+            RelationshipType::DependsOn => (b, Self::DependsOn, a),
+            RelationshipType::DependencyOf => (a, Self::DependsOn, b),
             /*
             RelationshipType::DependencyManifestOf => {}
-            RelationshipType::BuildDependencyOf => {}
-            RelationshipType::DevDependencyOf => {}
+            RelationshipType::BuildDependencyOf => {}*/
+            RelationshipType::DevDependencyOf => (b, Self::DevDependsOn, a),
+            /*
             RelationshipType::OptionalDependencyOf => {}
             RelationshipType::ProvidedDependencyOf => {}
             RelationshipType::TestDependencyOf => {}

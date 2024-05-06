@@ -26,17 +26,49 @@ impl Database {
     pub async fn new(config: &str) -> anyhow::Result<Self> {
         let (mut client, connection) = Client::connect_age(config, NoTls).await?;
 
+        tokio::spawn(async move {
+            if let Err(e) = connection.await {
+                eprintln!("connection error: {}", e);
+            }
+        });
+
         if client.graph_exists(GRAPH).await? {
             client.drop_graph(GRAPH).await?;
         }
 
         client.create_graph(GRAPH).await?;
 
-        tokio::spawn(async move {
-            if let Err(e) = connection.await {
-                eprintln!("connection error: {}", e);
-            }
-        });
+        // create to initial labels
+
+        for label in ["SBOM", "Package"] {
+            client
+                .execute_cypher::<()>(GRAPH, r#"CREATE(:{label})"#, None)
+                .await?;
+            client
+                .execute_cypher::<()>(GRAPH, r#"MATCH (v:{label}) DELETE v"#, None)
+                .await?;
+        }
+
+        // create indexes
+
+        client
+            .execute(
+                r#"
+CREATE UNIQUE INDEX "SBOM__id_namespace" ON sboms."SBOM" (agtype_access_operator(properties, '"id"'), agtype_access_operator(properties, '"namespace"'))
+        "#,
+                &[],
+            )
+            .await?;
+        client
+            .execute(
+                r#"
+CREATE UNIQUE INDEX "Package__id_namespace" ON sboms."Package" (agtype_access_operator(properties, '"id"'), agtype_access_operator(properties, '"namespace"'))
+        "#,
+                &[],
+            )
+            .await?;
+
+        // done
 
         Ok(Self { client })
     }

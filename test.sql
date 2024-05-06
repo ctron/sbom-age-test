@@ -3,6 +3,9 @@
 LOAD 'age';
 SET search_path = ag_catalog, "$user", public;
 
+CREATE INDEX SBOM__properties ON sboms."SBOM" USING GIN (properties);
+CREATE INDEX Package__properties ON sboms."Package" USING GIN (properties);
+
 -- create a new graph
 
 SELECT create_graph('sboms');
