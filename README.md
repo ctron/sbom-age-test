@@ -1,6 +1,10 @@
 # Testing Apache AGE
 
-## Fetch an initial dataset
+The goal is to get a better understanding of SBOMs (SPDX SBOMs) in the context of graph databases. Using Apache AGE.
+
+## Fetching an initial dataset
+
+This needs to be done at least once.
 
 ```bash
 sbom download https://access.redhat.com/security/data/sbom/beta -k https://access.redhat.com/security/data/97f5eac4.txt#77E79ABE93673533ED09EBE2DCE3823597F5EAC4 -d data/current 
