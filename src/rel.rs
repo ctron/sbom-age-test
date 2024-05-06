@@ -1,6 +1,8 @@
 use spdx_rs::models::RelationshipType;
 
-#[derive(Copy, Clone, Eq, PartialEq, Debug, Hash, strum::IntoStaticStr, strum::Display)]
+#[derive(
+    Copy, Clone, Eq, PartialEq, Debug, Hash, strum::IntoStaticStr, strum::Display, strum::EnumIter,
+)]
 pub enum Relationship {
     Describes,
     Contains,

@@ -156,3 +156,8 @@ FROM cypher('sboms', $$
     MATCH(a:Package {namespace: 'https://access.redhat.com/security/data/sbom/spdx/DIRSRV-12.1-RHEL-9'})
     RETURN a.name, a
 $$) as (a agtype, b agtype);
+
+-- stats
+
+SELECT count(*) from sboms."Package";
+SELECT count(*) from sboms."Contains";

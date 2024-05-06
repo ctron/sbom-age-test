@@ -6,9 +6,16 @@ use spdx_rs::models::SPDX;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::ops::Deref;
+use strum::IntoEnumIterator;
 use tokio_postgres::{NoTls, Statement};
 
 const GRAPH: &str = "sboms";
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Key {
+    pub id: String,
+    pub namespace: String,
+}
 
 pub struct Database {
     client: Client,
@@ -42,31 +49,48 @@ impl Database {
 
         for label in ["SBOM", "Package"] {
             client
-                .execute_cypher::<()>(GRAPH, r#"CREATE(:{label})"#, None)
+                .execute_cypher::<()>(GRAPH, &format!(r#"CREATE(:{label})"#), None)
                 .await?;
+        }
+        for label in Relationship::iter() {
             client
-                .execute_cypher::<()>(GRAPH, r#"MATCH (v:{label}) DELETE v"#, None)
+                .execute_cypher::<()>(
+                    GRAPH,
+                    &format!(r#"MATCH (a), (b) CREATE (a)-[:{label}]->(b)"#),
+                    None,
+                )
+                .await?;
+        }
+        for label in ["SBOM", "Package"] {
+            client
+                .execute_cypher::<()>(
+                    GRAPH,
+                    &format!(r#"MATCH (v:{label}) DETACH DELETE v"#),
+                    None,
+                )
                 .await?;
         }
 
         // create indexes
 
-        client
-            .execute(
-                r#"
-CREATE UNIQUE INDEX "SBOM__id_namespace" ON sboms."SBOM" (agtype_access_operator(properties, '"id"'), agtype_access_operator(properties, '"namespace"'))
-        "#,
-                &[],
-            )
-            .await?;
-        client
-            .execute(
-                r#"
-CREATE UNIQUE INDEX "Package__id_namespace" ON sboms."Package" (agtype_access_operator(properties, '"id"'), agtype_access_operator(properties, '"namespace"'))
-        "#,
-                &[],
-            )
-            .await?;
+        /*
+                client
+                    .execute(
+                        r#"
+        CREATE UNIQUE INDEX "SBOM__id_namespace" ON sboms."SBOM" (agtype_access_operator(properties, '"id"'), agtype_access_operator(properties, '"namespace"'))
+                "#,
+                        &[],
+                    )
+                    .await?;
+                client
+                    .execute(
+                        r#"
+        CREATE UNIQUE INDEX "Package__id_namespace" ON sboms."Package" (agtype_access_operator(properties, '"id"'), agtype_access_operator(properties, '"namespace"'))
+                "#,
+                        &[],
+                    )
+                    .await?;
+        */
 
         // done
 
@@ -80,24 +104,36 @@ CREATE UNIQUE INDEX "Package__id_namespace" ON sboms."Package" (agtype_access_op
             sbom.relationships.len()
         );
 
+        let mut nodes: HashMap<Key, i64> = HashMap::with_capacity(sbom.package_information.len());
+
         // add SBOM itself
 
-        self.client
-            .execute_cypher(
+        let key = Key {
+            id: sbom.document_creation_information.spdx_identifier.clone(),
+            namespace: sbom
+                .document_creation_information
+                .spdx_document_namespace
+                .clone(),
+        };
+
+        let row = self
+            .client
+            .query_cypher(
                 GRAPH,
                 r#"
-CREATE(:SBOM {id: $id, name: $name, namespace: $namespace})
+CREATE(v:SBOM {id: $id, name: $name, namespace: $namespace})
+RETURN id(v)
 "#,
                 Some(AgType(Sbom {
-                    id: sbom.document_creation_information.spdx_identifier.clone(),
-                    namespace: sbom
-                        .document_creation_information
-                        .spdx_document_namespace
-                        .clone(),
+                    id: key.id.clone(),
+                    namespace: key.namespace.clone(),
                     name: sbom.document_creation_information.document_name.clone(),
                 })),
             )
             .await?;
+
+        let id: AgType<i64> = row.first().expect("need one row").get(0);
+        nodes.insert(key, id.0);
 
         // add packages
 
@@ -106,7 +142,8 @@ CREATE(:SBOM {id: $id, name: $name, namespace: $namespace})
             .prepare_cypher(
                 GRAPH,
                 r#"
-CREATE(:Package {id: $id, namespace: $namespace, name: $name, purls: $purls, cpes: $cpes})
+CREATE(v:Package {id: $id, namespace: $namespace, name: $name, purls: $purls, cpes: $cpes})
+RETURN id(v)
 "#,
                 true,
             )
@@ -123,21 +160,30 @@ CREATE(:Package {id: $id, namespace: $namespace, name: $name, purls: $purls, cpe
                 }
             }
 
-            self.client
+            let key = Key {
+                id: package.package_spdx_identifier.clone(),
+                namespace: sbom
+                    .document_creation_information
+                    .spdx_document_namespace
+                    .clone(),
+            };
+
+            let row = self
+                .client
                 .query(
                     &add_package,
                     &[&AgType(Package {
-                        id: package.package_spdx_identifier.clone(),
+                        id: key.id.clone(),
                         name: package.package_name.clone(),
-                        namespace: sbom
-                            .document_creation_information
-                            .spdx_document_namespace
-                            .clone(),
+                        namespace: key.namespace.clone(),
                         cpes,
                         purls,
                     })],
                 )
                 .await?;
+
+            let id: AgType<i64> = row.first().expect("need one row").get(0);
+            nodes.insert(key, id.0);
         }
 
         // add "document describes"
@@ -147,10 +193,10 @@ CREATE(:Package {id: $id, namespace: $namespace, name: $name, purls: $purls, cpe
                 .execute_cypher(
                     GRAPH,
                     r#"
-MATCH (a), (b)
-WHERE a.id = $a AND a.namespace = $namespace AND b.id = $b AND b.namespace = $namespace
-CREATE (a)-[:DescribesDocument]->(b)
-"#,
+            MATCH (a), (b)
+            WHERE a.id = $a AND a.namespace = $namespace AND b.id = $b AND b.namespace = $namespace
+            CREATE (a)-[:DescribesDocument]->(b)
+            "#,
                     Some(AgType(json!({
                         "a": id,
                         "b": sbom.document_creation_information.spdx_identifier.clone(),
@@ -165,6 +211,79 @@ CREATE (a)-[:DescribesDocument]->(b)
 
         // add relationships
 
+        self.add_relationships_by_id(&sbom, &nodes).await?;
+
+        // done
+
+        Ok(())
+    }
+
+    async fn add_relationships_by_id(
+        &mut self,
+        sbom: &SPDX,
+        nodes: &HashMap<Key, i64>,
+    ) -> anyhow::Result<()> {
+        let namespace = &sbom.document_creation_information.spdx_document_namespace;
+        let mut prep = HashMap::<_, Statement>::new();
+
+        for rel in &sbom.relationships {
+            let (left, rel, right) = Relationship::from_rel(
+                rel.spdx_element_id.clone(),
+                &rel.relationship_type,
+                rel.related_spdx_element.clone(),
+            );
+
+            let stmt = match prep.entry(rel) {
+                Entry::Occupied(entry) => entry.get().clone(),
+                Entry::Vacant(entry) => {
+                    let stmt = self
+                        .client
+                        .prepare(&format!(
+                            r#"
+INSERT INTO {GRAPH}."{rel}" (start_id, end_id, properties)
+VALUES (agtype_to_graphid($1), agtype_to_graphid($2), $3)
+"#
+                        ))
+                        .await?;
+
+                    entry.insert(stmt).clone()
+                }
+            };
+
+            let Some(a) = nodes
+                .get(&Key {
+                    id: left.clone(),
+                    namespace: namespace.clone(),
+                })
+                .map(AgType)
+            else {
+                log::warn!("Missing key: {left}");
+                continue;
+            };
+            let Some(b) = nodes
+                .get(&Key {
+                    id: right.clone(),
+                    namespace: namespace.clone(),
+                })
+                .map(AgType)
+            else {
+                log::warn!("Missing key: {right}");
+                continue;
+            };
+
+            let properties = AgType(json!({}));
+
+            self.client.query(&stmt, &[&a, &b, &properties]).await?;
+        }
+
+        Ok(())
+    }
+
+    async fn add_relationships(
+        &mut self,
+        sbom: &SPDX,
+        _nodes: &HashMap<Key, AgType<i64>>,
+    ) -> anyhow::Result<()> {
         let mut prep = HashMap::<_, Statement>::new();
 
         for rel in &sbom.relationships {
@@ -183,15 +302,16 @@ CREATE (a)-[:DescribesDocument]->(b)
                             GRAPH,
                             &format!(
                                 r#"
-    MATCH (a), (b)
-    WHERE a.id = $a AND a.namespace = $namespace AND b.id = $b AND b.namespace = $namespace
-    CREATE (a)-[:{type}]->(b)
+MATCH (a), (b)
+WHERE a.id = $a AND a.namespace = $namespace AND b.id = $b AND b.namespace = $namespace
+CREATE (a)-[:{type}]->(b)
 "#,
                                 type = rel
                             ),
                             true,
                         )
                         .await?;
+
                     entry.insert(stmt).clone()
                 }
             };
