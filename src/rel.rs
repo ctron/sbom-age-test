@@ -5,7 +5,11 @@ pub enum Relationship {
     Describes,
     Contains,
     DependsOn,
+    Generates,
     PackageOf,
+    VariantOf,
+    Other,
+    NotImplemented,
 }
 
 impl Relationship {
@@ -26,11 +30,14 @@ impl Relationship {
             RelationshipType::TestDependencyOf => {}
             RelationshipType::RuntimeDependencyOf => {}
             RelationshipType::ExampleOf => {}
-            RelationshipType::Generates => {}
+            */
+            RelationshipType::Generates => (a, Self::Generates, b),
+            /*
             RelationshipType::GeneratedFrom => {}
             RelationshipType::AncestorOf => {}
-            RelationshipType::DescendantOf => {}
-            RelationshipType::VariantOf => {}
+            RelationshipType::DescendantOf => {}*/
+            RelationshipType::VariantOf => (a, Self::VariantOf, b),
+            /*
             RelationshipType::DistributionArtifact => {}
             RelationshipType::PatchFor => {}
             RelationshipType::PatchApplied => {}
@@ -57,10 +64,13 @@ impl Relationship {
             RelationshipType::HasPrerequisite => {}
             RelationshipType::RequirementDescriptionFor => {}
             RelationshipType::SpecificationFor => {}
-            RelationshipType::Other => {}
              */
+            RelationshipType::Other => (a, Self::Other, b),
+
             n => {
-                panic!("Need to implement: {n:?}");
+                // panic!("Need to implement: {n:?}");
+                log::warn!("Not implemented: {n:?}");
+                (a, Self::NotImplemented, b)
             }
         }
     }
