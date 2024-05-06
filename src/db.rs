@@ -218,6 +218,7 @@ RETURN id(v)
         Ok(())
     }
 
+    #[allow(unused)]
     async fn add_relationships_by_id(
         &mut self,
         sbom: &SPDX,
@@ -279,6 +280,7 @@ VALUES (agtype_to_graphid($1), agtype_to_graphid($2), $3)
         Ok(())
     }
 
+    #[allow(unused)]
     async fn add_relationships(
         &mut self,
         sbom: &SPDX,
