@@ -66,6 +66,7 @@ The load it into a newly created (empty) Postgres instance:
 
 ```bash
 psql -h localhost -p 5433 -U postgres -d postgres -f db.sql
+psql -h localhost -p 5433 -U postgres -d postgres -f perf.sql
 ```
 
 ## age-viewer

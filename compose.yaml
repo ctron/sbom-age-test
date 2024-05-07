@@ -9,6 +9,8 @@ services:
       - postgres
       - -c
       - shared_buffers=1GB
+      - -c
+      - maintenance_work_mem=512MB
     volumes:
       - ./db-data:/var/lib/postgresql/data:z
     ports:

@@ -89,6 +89,12 @@ FROM cypher('sboms', $$
     RETURN a.name, label(r), b.id, b.name
 $$) as (a agtype, b agtype, c agtype, d agtype);
 
+EXPLAIN ANALYZE SELECT *
+FROM cypher('sboms', $$
+    MATCH (a {id: 'SPDXRef-5aa79381-54ea-42dc-b27f-5200855ec839', namespace: 'https://access.redhat.com/security/data/sbom/spdx/DIRSRV-12.1-RHEL-9'})-[r]-(b)
+    RETURN a.name, label(r), b.id, b.name
+$$) as (a agtype, b agtype, c agtype, d agtype);
+
 SELECT *
 FROM cypher('sboms', $$
     MATCH (a {id: 'SPDXRef-5aa79381-54ea-42dc-b27f-5200855ec839', namespace: 'https://access.redhat.com/security/data/sbom/spdx/DIRSRV-12.1-RHEL-9'})-->(b)
