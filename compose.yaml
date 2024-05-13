@@ -4,7 +4,7 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: postgres
-    image: "docker.io/apache/age:PG16_latest"
+    image: "docker.io/apache/age:release_PG16_1.5.0"
     command:
       - postgres
       - -c
